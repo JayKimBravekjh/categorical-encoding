@@ -86,6 +86,7 @@ class MultipleImputationEncoder(BaseEstimator, TransformerMixin):
         self._dim = None
         self.mean_mapping = None
         self.std_mapping = None
+        self.smoove_mapping = None
         self.handle_unknown = handle_unknown
         self.handle_missing = handle_missing
         self._mean = None
@@ -139,7 +140,7 @@ class MultipleImputationEncoder(BaseEstimator, TransformerMixin):
         )
         self.ordinal_encoder = self.ordinal_encoder.fit(X)
         X_ordinal = self.ordinal_encoder.transform(X)
-        self.mean_mapping, self.std_mapping = self.fit_target_encoding(X_ordinal, y)
+        self.mean_mapping, self.std_mapping, self.smoove_mapping = self.fit_target_encoding(X_ordinal, y)
         
         X_temp = self.transform(X, override_return_df=True)
         self.feature_names = list(X_temp.columns)
@@ -161,6 +162,7 @@ class MultipleImputationEncoder(BaseEstimator, TransformerMixin):
     def fit_target_encoding(self, X, y):
         mean_mapping = {}
         std_mapping = {}
+        smoove_mapping = {}
 
         for switch in self.ordinal_encoder.category_mapping:
             col = switch.get('col')
@@ -172,37 +174,32 @@ class MultipleImputationEncoder(BaseEstimator, TransformerMixin):
             stats = y.groupby(X[col]).agg(['count', 'mean', 'std'])
 
             smoove = 1 / (1 + np.exp(-(stats['count'] - self.min_samples_leaf) / self.smoothing))
-            smoothing_mean = prior_mean * (1 - smoove) + stats['mean'] * smoove
 
-            #Need to also calculate std. First compute expectation of x^2
-            ex2 = (prior_mean **2 +  prior_std **2) * (1 - smoove) + \
-                (stats['mean'] **2 + stats['std'] **2) * smoove
-
-            #Now the variance is E[x^2] - (E[x])^2. STD: a square root if it
-            smoothing_std = np.sqrt(ex2 - smoothing_mean**2)
-
-            smoothing_mean[stats['count'] == 1] = prior_mean
-            smoothing_std[stats['count'] == 1] = prior_std
+            cat_mean = stats['mean'].copy()
+            cat_std = stats['std'].copy()
+            cat_mean[stats['count'] == 1] = prior_mean
+            cat_std[stats['count'] == 1] = prior_std
 
 
             if self.handle_unknown == 'return_nan':
-                smoothing_mean.loc[-1] = np.nan
-                smoothing_std.loc[-1] = np.nan
+                cat_mean.loc[-1] = np.nan
+                cat_std.loc[-1] = np.nan
             elif self.handle_unknown == 'value':
-                smoothing_mean.loc[-1] = prior_mean
-                smoothing_std.loc[-1] = prior_std
+                cat_mean.loc[-1] = prior_mean
+                cat_std.loc[-1] = prior_std
 
             if self.handle_missing == 'return_nan':
-                smoothing_mean.loc[values.loc[np.nan]] = np.nan
-                smoothing_std.loc[values.loc[np.nan]] = np.nan
+                cat_mean.loc[values.loc[np.nan]] = np.nan
+                cat_std.loc[values.loc[np.nan]] = np.nan
             elif self.handle_missing == 'value':
-                smoothing_mean.loc[-2] = prior_mean
-                smoothing_std.loc[-2] = prior_std
+                cat_mean.loc[-2] = prior_mean
+                cat_std.loc[-2] = prior_std
 
-            mean_mapping[col] = smoothing_mean
-            std_mapping[col] = smoothing_std
+            mean_mapping[col] = cat_mean
+            std_mapping[col] = cat_std
+            smoove_mapping[col] = smoove
 
-        return mean_mapping, std_mapping
+        return mean_mapping, std_mapping, smoove_mapping
 
     def transform(self, X, y=None, override_return_df=False):
         """Perform the transformation to new categorical data.
@@ -274,18 +271,24 @@ class MultipleImputationEncoder(BaseEstimator, TransformerMixin):
 
         return self.fit(X, y, **fit_params).transform(X, y)
 
+    def _sample_single(self, loc, scale, smoove):
+        if np.isnan(smoove):    #TODO: this should not be happening
+            smoove = 0 
+        cat_sample = np.random.normal(loc=loc, scale=scale)
+        global_sample = np.random.normal(loc=self._mean, scale=self._std)
+        return np.random.choice([cat_sample, global_sample], p=[smoove, 1-smoove])
+    
     def target_encode_single(self, X_in):
         X = X_in.copy(deep=True)
 
         for col in self.cols:
             observation_mean = X[col].map(self.mean_mapping[col])
-            observation_std = X[col].map(self.std_mapping[col])
-            #observation_cov = np.diag(observation_std**2)
+            observation_std = X[col].map(self.std_mapping[col])            
+            observation_smoove = X[col].map(self.smoove_mapping[col])
 
-            normal_vectorized = np.vectorize(np.random.normal)
-            X[col] = pd.Series(normal_vectorized(loc=observation_mean, scale=observation_std))
-
-            #X[col] = np.random.multivariate_normal(observation_mean, observation_cov) #This seems too slow
+            normal_vectorized = np.vectorize(self._sample_single)
+            X[col] = pd.Series(normal_vectorized(loc=observation_mean, scale=observation_std, 
+                    smoove=observation_smoove))
 
         return X
 
