@@ -5,7 +5,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from category_encoders.ordinal import OrdinalEncoder
 import category_encoders.utils as util
 
-__author__ = 'chappers'
+__author__ = 'Michael Larionov'
 
 
 class ProbabilisticTargetEncoderForBinaryClassification(BaseEstimator, TransformerMixin):
