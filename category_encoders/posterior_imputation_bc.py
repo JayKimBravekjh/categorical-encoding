@@ -88,7 +88,7 @@ class PosteriorImputationEncoderBC(BaseEstimator, TransformerMixin):
 
     def __init__(self, verbose=0, cols=None, drop_invariant=False, return_df=True,
                  handle_unknown='value', handle_missing='value', random_state=None, 
-                 prior_samples_ratio=0.1, n_draws=10):
+                 prior_samples_ratio=0.1, n_draws=10, leave_one_out=True):
         self.verbose = verbose
         self.return_df = return_df
         self.drop_invariant = drop_invariant
@@ -103,6 +103,7 @@ class PosteriorImputationEncoderBC(BaseEstimator, TransformerMixin):
         self.prior_samples_ratio = prior_samples_ratio
         self.feature_names = None
         self.n_draws = n_draws
+        self.leave_one_out = leave_one_out
 
     # noinspection PyUnusedLocal
     def fit(self, X, y, **kwargs):
@@ -274,6 +275,9 @@ class PosteriorImputationEncoderBC(BaseEstimator, TransformerMixin):
 
             # Calculate the m-probability estimate
             estimate = self._compute_posterior_parameters(stats['sum'], stats['count'] - stats['sum'], prior, self.prior_samples_ratio)
+            if self.leave_one_out:
+                estimate = estimate[0] - y * (estimate[0] > 0), estimate[1] - (1-y) * (estimate[1] > 0)
+
 
             # Ignore unique columns. This helps to prevent overfitting on id-like columns
             singles = estimate[-1].isnull()
