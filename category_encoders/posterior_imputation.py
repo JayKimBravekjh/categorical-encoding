@@ -87,7 +87,7 @@ class PosteriorImputationEncoder(BaseEstimator, TransformerMixin):
 
     def __init__(self, verbose=0, cols=None, drop_invariant=False, return_df=True,
                  handle_unknown='value', handle_missing='value', random_state=None, 
-                 prior_samples_ratio=0.1, n_draws=10):
+                 prior_samples_ratio=0.1, n_draws=10, include_precision=True):
         self.verbose = verbose
         self.return_df = return_df
         self.drop_invariant = drop_invariant
@@ -102,6 +102,7 @@ class PosteriorImputationEncoder(BaseEstimator, TransformerMixin):
         self.prior_samples_ratio = prior_samples_ratio
         self.feature_names = None
         self.n_draws = n_draws
+        self.include_precision = include_precision
 
     # noinspection PyUnusedLocal
     def fit(self, X, y, **kwargs):
@@ -321,20 +322,23 @@ class PosteriorImputationEncoder(BaseEstimator, TransformerMixin):
         scale = 1/beta
         tau = np.random.gamma(shape, scale)
         x = np.random.normal(mu, 1/np.sqrt(lambda_ * tau))
-        return x
+        return (x, tau)
 
 
     def _score_one_draw(self, X_in):
         X = X_in.copy(deep=True)
-        sample_function = np.vectorize(self._sample_single)
+        sample_function = np.vectorize(self._sample_single)#, signature='(a1),(a2),(a3),(a4)->(k)')
         for col in self.cols:
             # Score the column
             mu = self.mapping[col][0]
             lambda_ = self.mapping[col][1]
             alpha = self.mapping[col][2]
             beta = self.mapping[col][3]
-            sample_result = pd.Series(sample_function(mu, lambda_, alpha, beta), index=mu.index)
-            X[col] = X[col].map(sample_result)
+            sample_result_x, sample_result_tau = sample_function(mu, lambda_, alpha, beta)
+            sample_result = pd.DataFrame(data=np.vstack([sample_result_x, sample_result_tau]).T, columns=['x', 'tau'], index=mu.index)
+            if self.include_precision:
+                X[f'precision_{col}'] = X[col].map(sample_result.tau)
+            X[col] = X[col].map(sample_result.x)
         return X
 
     def _score(self, X):
