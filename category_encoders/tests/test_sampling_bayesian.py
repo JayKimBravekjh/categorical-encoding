@@ -31,7 +31,7 @@ class TestSamplingBayesianEncoder(TestCase):
         th.verify_numeric(enc.transform(X_t, y_t))
 
     def test_regression(self):
-        enc = encoders.PosteriorImputationEncoder(verbose=1, )
+        enc = encoders.SamplingBayesianEncoder(verbose=1, )
         enc.fit(X, y_reg)
         th.verify_numeric(enc.transform(X_t))
         th.verify_numeric(enc.transform(X_t, y_t_reg))
@@ -53,11 +53,11 @@ class TestSamplingBayesianEncoder(TestCase):
         self.assertEqual(y_le.shape[0], preds.shape[0])
 
     def test_wrapper_regression(self):
-        enc = encoders.PosteriorImputationEncoder(verbose=1, n_draws=2,
-                                                    cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
+        enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
+                                               cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
                                                           'categorical', 'na_categorical', 'categorical_int'])
         classifier = RandomForestRegressor(n_estimators=10)
-        wrapper_model = EncoderWrapperR(enc, classifier)
+        wrapper_model = EncoderWrapper(enc, classifier)
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]
@@ -67,3 +67,4 @@ class TestSamplingBayesianEncoder(TestCase):
         wrapper_model.fit(X_le, y_le)
         preds = wrapper_model.predict(X_le)
         self.assertEqual(y_le.shape[0], preds.shape[0])
+

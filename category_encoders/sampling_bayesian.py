@@ -9,13 +9,11 @@ from sklearn.utils.random import check_random_state
 __author__ = 'Michael Larionov'
 
 
-class PosteriorImputationEncoder(BaseEstimator, TransformerMixin):
-    """M-probability estimate of likelihood.
+class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
+    """Sampling Bayesian Encoder
 
-    This is a simplified version of target encoder, which goes under names like m-probability estimate or
-    additive smoothing with known incidence rates. In comparison to target encoder, m-probability estimate
-    has only one tunable parameter (`m`), while target encoder has two tunable parameters (`min_samples_leaf`
-    and `smoothing`).
+    This is a version of target encoder, which learns posterior distribution during training, then takes
+    a sample from the distribution during prediction
 
     Parameters
     ----------
@@ -32,56 +30,12 @@ class PosteriorImputationEncoder(BaseEstimator, TransformerMixin):
         options are 'return_nan', 'error' and 'value', defaults to 'value', which returns the prior probability.
     handle_unknown: str
         options are 'return_nan', 'error' and 'value', defaults to 'value', which returns the prior probability.
-    randomized: bool,
-        adds normal (Gaussian) distribution noise into training data in order to decrease overfitting (testing data are untouched).
-    sigma: float
-        standard deviation (spread or "width") of the normal distribution.
-    m: float
-        this is the "m" in the m-probability estimate. Higher value of m results into stronger shrinking.
-        M is non-negative.
-
-    Example
-    -------
-    >>> from category_encoders import *
-    >>> import pandas as pd
-    >>> from sklearn.datasets import load_boston
-    >>> bunch = load_boston()
-    >>> y = bunch.target > 22.5
-    >>> X = pd.DataFrame(bunch.data, columns=bunch.feature_names)
-    >>> enc = MEstimateEncoder(cols=['CHAS', 'RAD']).fit(X, y)
-    >>> numeric_dataset = enc.transform(X)
-    >>> print(numeric_dataset.info())
-    <class 'pandas.core.frame.DataFrame'>
-    RangeIndex: 506 entries, 0 to 505
-    Data columns (total 13 columns):
-    CRIM       506 non-null float64
-    ZN         506 non-null float64
-    INDUS      506 non-null float64
-    CHAS       506 non-null float64
-    NOX        506 non-null float64
-    RM         506 non-null float64
-    AGE        506 non-null float64
-    DIS        506 non-null float64
-    RAD        506 non-null float64
-    TAX        506 non-null float64
-    PTRATIO    506 non-null float64
-    B          506 non-null float64
-    LSTAT      506 non-null float64
-    dtypes: float64(13)
-    memory usage: 51.5 KB
-    None
 
     References
     ----------
 
-    .. [1] A Preprocessing Scheme for High-Cardinality Categorical Attributes in Classification and Prediction Problems, equation 7, from
-    https://dl.acm.org/citation.cfm?id=507538
+    .. [1]
 
-    .. [2] On estimating probabilities in tree pruning, equation 1, from
-    https://link.springer.com/chapter/10.1007/BFb0017010
-
-    .. [3] Additive smoothing, from
-    https://en.wikipedia.org/wiki/Additive_smoothing#Generalized_to_the_case_of_known_incidence_rates
 
     """
 
@@ -369,3 +323,5 @@ class PosteriorImputationEncoder(BaseEstimator, TransformerMixin):
         split_y =  np.split(y, self.n_draws)
         split_y_combined = np.vstack(split_y)
         return split_y_combined.mean(axis=0)
+
+
