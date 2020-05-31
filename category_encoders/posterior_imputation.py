@@ -362,7 +362,8 @@ class PosteriorImputationEncoder(BaseEstimator, TransformerMixin):
             return self.feature_names
 
     def expand_y(self, y):
-        return np.hstack([y for _ in range(self.n_draws)])
+        y = np.array(y)
+        return np.vstack([y for _ in range(self.n_draws)])
 
     def average_y(self, y):
         split_y =  np.split(y, self.n_draws)

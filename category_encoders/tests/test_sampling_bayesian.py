@@ -1,5 +1,5 @@
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from unittest2 import TestCase  # or `from unittest import ...` if on Python 3.4+
 import category_encoders.tests.helpers as th
 import numpy as np
@@ -36,7 +36,7 @@ class TestSamplingBayesianEncoder(TestCase):
         th.verify_numeric(enc.transform(X_t))
         th.verify_numeric(enc.transform(X_t, y_t_reg))
 
-    def test_wrapper(self):
+    def test_wrapper_classification(self):
         enc = encoders.PosteriorImputationEncoderBC(verbose=1, n_draws=2,
                                                     cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
                                                           'categorical', 'na_categorical', 'categorical_int'])
@@ -46,6 +46,22 @@ class TestSamplingBayesianEncoder(TestCase):
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]
         y_le = y[inf_values]
+        self.assertFalse(np.any(np.isnan(X_le)))
+        self.assertFalse(np.any(np.isinf(X_le)))
+        wrapper_model.fit(X_le, y_le)
+        preds = wrapper_model.predict(X_le)
+        self.assertEqual(y_le.shape[0], preds.shape[0])
+
+    def test_wrapper_regression(self):
+        enc = encoders.PosteriorImputationEncoder(verbose=1, n_draws=2,
+                                                    cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
+                                                          'categorical', 'na_categorical', 'categorical_int'])
+        classifier = RandomForestRegressor(n_estimators=10)
+        wrapper_model = EncoderWrapperR(enc, classifier)
+        X_le = OrdinalEncoder().fit_transform(X).fillna(0)
+        inf_values = np.isinf(X_le).sum(axis=1) == 0
+        X_le = X_le[inf_values]
+        y_le = y_reg[inf_values]
         self.assertFalse(np.any(np.isnan(X_le)))
         self.assertFalse(np.any(np.isinf(X_le)))
         wrapper_model.fit(X_le, y_le)
