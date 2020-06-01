@@ -3,10 +3,10 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from unittest2 import TestCase  # or `from unittest import ...` if on Python 3.4+
 import category_encoders.tests.helpers as th
 import numpy as np
-from category_encoders.pte_utils import *
 from category_encoders.ordinal import OrdinalEncoder
 
 import category_encoders as encoders
+from category_encoders.sampling_bayesian import EncoderWrapper
 
 np_X = th.create_array(n_rows=100)
 np_X_t = th.create_array(n_rows=50, extras=True)
