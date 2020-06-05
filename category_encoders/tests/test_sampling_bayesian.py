@@ -30,11 +30,26 @@ class TestSamplingBayesianEncoder(TestCase):
         th.verify_numeric(enc.transform(X_t))
         th.verify_numeric(enc.transform(X_t, y_t))
 
-    def test_regression(self):
+    def test_regression_numeric(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, )
         enc.fit(X, y_reg)
         th.verify_numeric(enc.transform(X_t))
         th.verify_numeric(enc.transform(X_t, y_t_reg))
+
+    def test_regression(self):
+        enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
+                                               cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
+                                                          'categorical', 'na_categorical', 'categorical_int'])
+        X_le = OrdinalEncoder().fit_transform(X).fillna(0)
+        inf_values = np.isinf(X_le).sum(axis=1) == 0
+        X_le = X_le[inf_values]
+        y_le = y[inf_values]
+        enc.fit(X_le, y_le)
+        X_new = enc.transform(X_le)
+        self.assertEqual(len(X_le.columns) + len(enc.cols), len(X_new.columns))
+        df_diff = X_new.categorical - X_new.categorical___1
+        self.assertTrue(df_diff.max() - df_diff.min() > 0, "Both encoded columns contain the same values")
+
 
     def test_wrapper_classification(self):
         enc = encoders.PosteriorImputationEncoderBC(verbose=1, n_draws=2,

@@ -229,7 +229,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
             sample_results = sample_function(*self.mapping[col])
             columns = [col]
             if len(sample_results) > 1:
-                columns += [f"{col}{i}" for i in range(1, len(sample_results))]
+                columns += [f"{col}___{i}" for i in range(1, len(sample_results))]
             sample_results_df = pd.DataFrame(data=np.vstack(sample_results).T, columns=columns,
                                              index=self.mapping[col][0].index)
             for column in columns[::-1]:
@@ -376,10 +376,11 @@ class NormalGammaAccumulator(object):
         :param lambda_: lambda
         :param alpha: alpha
         :param beta: beta
-        :return: a tuple that returns the mean and precision.
+        :return: a tuple that returns $\mu$ and $\sigma^2$.
         """
         shape = alpha
         scale = 1 / beta
         tau = np.random.gamma(shape, scale)
         x = np.random.normal(mu, 1 / np.sqrt(lambda_ * tau))
-        return x, tau
+        sigma_2 = 1/tau
+        return x, sigma_2
