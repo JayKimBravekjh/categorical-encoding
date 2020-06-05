@@ -1,10 +1,10 @@
-"""M-probability estimate"""
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin, ClassifierMixin, RegressorMixin
 from category_encoders.ordinal import OrdinalEncoder
 import category_encoders.utils as util
-from sklearn.utils.random import check_random_state
 
 __author__ = 'Michael Larionov'
 
@@ -15,33 +15,26 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
     This is a version of target encoder, which learns posterior distribution during training, then takes
     a sample from the distribution during prediction
 
-    Parameters
-    ----------
-
-    verbose: int
-        integer indicating verbosity of the output. 0 for none.
-    cols: list
-        a list of columns to encode, if None, all string columns will be encoded.
-    drop_invariant: bool
-        boolean for whether or not to drop encoded columns with 0 variance.
-    return_df: bool
-        boolean for whether to return a pandas DataFrame from transform (otherwise it will be a numpy array).
-    handle_missing: str
-        options are 'return_nan', 'error' and 'value', defaults to 'value', which returns the prior probability.
-    handle_unknown: str
-        options are 'return_nan', 'error' and 'value', defaults to 'value', which returns the prior probability.
-
     References
     ----------
 
-    .. [1]
-
-
+    .. [1] Michael Larionov, Sampling Techniques in Bayesian Target Encoding, arXiv:2006.01317
     """
 
     def __init__(self, verbose=0, cols=None, drop_invariant=False, return_df=True,
-                 handle_unknown='value', handle_missing='value', random_state=None, 
-                 prior_samples_ratio=0.1, n_draws=10, include_precision=True):
+                 handle_unknown='value', handle_missing='value', random_state=None,
+                 prior_samples_ratio=1E-4, n_draws=10):
+        """
+        :param verbose: Level of verbosity. Default: 0
+        :param cols: Categorical columns to be encoded
+        :param drop_invariant: Drop columns that have the same value. Default: False
+        :param return_df: If True return DataFrame, even if the input is not. Default: True
+        :param handle_unknown: How to handle unknown. If 'value' then use prior distribution. If return_nan then  None
+        :param handle_missing: How to handle missing. If 'value' then use prior distribution. If return_nan then  None
+        :param random_state: Random state is used when taking samples
+        :param prior_samples_ratio: Degree of the influence of the prior distribution
+        :param n_draws: Number of draws (sample size)
+        """
         self.verbose = verbose
         self.return_df = return_df
         self.drop_invariant = drop_invariant
@@ -56,26 +49,16 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         self.prior_samples_ratio = prior_samples_ratio
         self.feature_names = None
         self.n_draws = n_draws
-        self.include_precision = include_precision
 
-    # noinspection PyUnusedLocal
-    def fit(self, X, y, **kwargs):
+    def fit(self, X, y):
         """Fit encoder according to X and binary y.
 
-        Parameters
-        ----------
-
-        X : array-like, shape = [n_samples, n_features]
-            Training vectors, where n_samples is the number of samples
-            and n_features is the number of features.
-        y : array-like, shape = [n_samples]
-            Binary target values.
-
-        Returns
-        -------
-
-        self : encoder
-            Returns self.
+            :param X: array-like, shape = [n_samples, n_features]
+               Training vectors, where n_samples is the number of samples
+               and n_features is the number of features.
+            :param y: array-like, shape = [n_samples]
+               Binary target values.
+            :return: self
 
         """
 
@@ -124,27 +107,22 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
             except KeyError as e:
                 if self.verbose > 0:
                     print("Could not remove column from feature names."
-                    "Not found in generated cols.\n{}".format(e))
+                          "Not found in generated cols.\n{}".format(e))
         return self
 
     def transform(self, X, y=None, override_return_df=False):
         """Perform the transformation to new categorical data.
 
-        When the data are used for model training, it is important to also pass the target in order to apply leave one out.
-
-        Parameters
-        ----------
-
-        X : array-like, shape = [n_samples, n_features]
-        y : array-like, shape = [n_samples] when transform by leave one out
-            None, when transform without target information (such as transform test set)
+        When the data are used for model training, it is important to also pass the target in order to apply leave
+        one out.
 
 
-        Returns
-        -------
-
-        p : array, shape = [n_samples, n_numeric + N]
+            :rtype: array, shape = [n_samples, n_numeric + N]
             Transformed values with encoding applied.
+            :param X: array-like, shape = [n_samples, n_features]
+            :param y: array-like, shape = [n_samples] when transform by leave one out
+            None, when transform without target information (such as transform test set)
+            :param override_return_df:
 
         """
 
@@ -166,7 +144,8 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         if y is not None:
             y = util.convert_input_vector(y, X.index).astype(float)
             if X.shape[0] != y.shape[0]:
-                raise ValueError("The length of X is " + str(X.shape[0]) + " but length of y is " + str(y.shape[0]) + ".")
+                raise ValueError(
+                    "The length of X is " + str(X.shape[0]) + " but length of y is " + str(y.shape[0]) + ".")
 
         if not list(self.cols):
             return X
@@ -178,7 +157,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
         if self.handle_unknown == 'error':
             if X[self.cols].isin([-1]).any().any():
-                raise ValueError('Unexpected categories found in dataframe')
+                raise ValueError('Unexpected categories found in DataFrame')
 
         # Loop over the columns and replace the nominal values with the numbers
         X = self._score(X)
@@ -204,100 +183,61 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
         # the interface requires 'y=None' in the signature but we need 'y'
         if y is None:
-            raise(TypeError, 'fit_transform() missing argument: ''y''')
+            raise (TypeError, 'fit_transform() missing argument: ''y''')
 
-        return self.fit(X, y, **fit_params).transform(X, y)
+        return self.fit(X, y).transform(X, y)
 
-    
-    def _compute_posterior_parameters(self, y_bar, y_var, n, mu_0=0, nu=0, alpha=0, beta=0):
-        ss = y_var * (n-1)
-        new_mu = (nu * mu_0 + n * y_bar) / (nu + n)
-        new_nu = nu + n
-        new_alpha = alpha  + n/2
-        new_beta = beta + 1/2*ss + n*nu/(n+nu)*(y_bar-mu_0)**2/2
-        return new_mu, new_nu, new_alpha, new_beta
-
-    
     def _train(self, X, y):
         # Initialize the output
         mapping = {}
 
         # Calculate global statistics
-        prior = self._compute_posterior_parameters(y.mean(), y.var(), y.shape[0])
+        self.accumulator = NormalGammaAccumulator(y, self.prior_samples_ratio)
+        prior = self.accumulator.prior
 
         for switch in self.ordinal_encoder.category_mapping:
             col = switch.get('col')
             values = switch.get('mapping')
-            # Calculate sum and count of the target for each unique value in the feature col
-            stats = y.groupby(X[col]).agg(['mean', 'count', 'var'])  # Count of x_{i,+} and x_i
 
-            # Calculate the m-probability estimate
-            estimate = self._compute_posterior_parameters(stats['mean'], stats['var'], stats['count'], 
-                prior[0], prior[1]*self.prior_samples_ratio, prior[2]*self.prior_samples_ratio, 
-                prior[3]*self.prior_samples_ratio)
+            estimate = self.accumulator.get_posterior_parameters(X, col)
 
+            # Deal with special cases
             # Ignore unique columns. This helps to prevent overfitting on id-like columns
             singles = estimate[-1].isnull()
-            estimate[0][singles] = prior[0]
-            estimate[1][singles] = prior[1]
-            estimate[2][singles] = prior[2]
-            estimate[3][singles] = prior[3]
+            for param_index in range(len(prior)):
+                estimate[param_index][singles] = prior[param_index]
 
+                if self.handle_unknown == 'return_nan':
+                    estimate[param_index].loc[-1] = np.nan
+                elif self.handle_unknown == 'value':
+                    estimate[param_index].loc[-1] = prior[param_index]
 
-            if self.handle_unknown == 'return_nan':
-                estimate[0].loc[-1] = np.nan
-                estimate[1].loc[-1] = np.nan
-                estimate[2].loc[-1] = np.nan
-                estimate[3].loc[-1] = np.nan
-            elif self.handle_unknown == 'value':
-                estimate[0].loc[-1] = prior[0]
-                estimate[1].loc[-1] = prior[1]
-                estimate[2].loc[-1] = prior[2]
-                estimate[3].loc[-1] = prior[3]
-
-            if self.handle_missing == 'return_nan':
-                estimate[0].loc[values.loc[np.nan]] = np.nan
-                estimate[1].loc[values.loc[np.nan]] = np.nan
-                estimate[2].loc[values.loc[np.nan]] = np.nan
-                estimate[3].loc[values.loc[np.nan]] = np.nan
-            elif self.handle_missing == 'value':
-                estimate[0].loc[-2] = prior[0]
-                estimate[1].loc[-2] = prior[1]
-                estimate[2].loc[-2] = prior[2]
-                estimate[3].loc[-2] = prior[3]
+                if self.handle_missing == 'return_nan':
+                    estimate[param_index].loc[values.loc[np.nan]] = np.nan
+                elif self.handle_missing == 'value':
+                    estimate[param_index].loc[-2] = prior[param_index]
 
             # Store the m-probability estimate for transform() function
             mapping[col] = estimate
 
         return mapping
 
-    def _sample_single(self, mu, lambda_, alpha, beta):
-        shape = alpha
-        scale = 1/beta
-        tau = np.random.gamma(shape, scale)
-        x = np.random.normal(mu, 1/np.sqrt(lambda_ * tau))
-        return (x, tau)
-
-
     def _score_one_draw(self, X_in):
         X = X_in.copy(deep=True)
-        sample_function = np.vectorize(self._sample_single)#, signature='(a1),(a2),(a3),(a4)->(k)')
+        sample_function = np.vectorize(self.accumulator.sample_single)  # , signature='(a1),(a2),(a3),(a4)->(k)')
         for col in self.cols:
-            # Score the column
-            mu = self.mapping[col][0]
-            lambda_ = self.mapping[col][1]
-            alpha = self.mapping[col][2]
-            beta = self.mapping[col][3]
-            sample_result_x, sample_result_tau = sample_function(mu, lambda_, alpha, beta)
-            sample_result = pd.DataFrame(data=np.vstack([sample_result_x, sample_result_tau]).T, columns=['x', 'tau'], index=mu.index)
-            if self.include_precision:
-                X[f'precision_{col}'] = X[col].map(sample_result.tau)
-            X[col] = X[col].map(sample_result.x)
+            sample_results = sample_function(*self.mapping[col])
+            columns = [col]
+            if len(sample_results) > 1:
+                columns += [f"{col}{i}" for i in range(1, len(sample_results))]
+            sample_results_df = pd.DataFrame(data=np.vstack(sample_results).T, columns=columns,
+                                             index=self.mapping[col][0].index)
+            for column in columns[::-1]:
+                X[column] = X[col].map(sample_results_df[column])
         return X
 
     def _score(self, X):
         return pd.concat([self._score_one_draw(X) for _ in range(self.n_draws)])
-
 
     def get_feature_names(self):
         """
@@ -316,32 +256,60 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
             return self.feature_names
 
     def expand_y(self, y):
+        """
+        Transform the dependent variable so that it matches the size of the oversampled array
+        :param y: dependent variable
+        :return: dependent variable duplicated n_draws times
+        """
         y = np.array(y).reshape(-1)
         return np.hstack([y for _ in range(self.n_draws)])
 
     def average_y(self, y):
-        split_y =  np.split(y, self.n_draws)
+        """
+        Average the values of the oversampled dependent variable to reduce its size to the original size.
+        This function is opposite to expand_y()
+        :param y: oversampled dependent variable
+        :return: the averaged dependent variable of the original size
+        """
+        split_y = np.split(y, self.n_draws)
         split_y_combined = np.vstack(split_y)
         return split_y_combined.mean(axis=0)
 
 
 class EncoderWrapper(BaseEstimator, ClassifierMixin, RegressorMixin):
-    '''
+    """
     Wraps encoder and estimator, orchestrates fit() and predict() pipelines.
     Works for regression and classification.
-    '''
+    """
 
     def __init__(self, encoder, estimator):
+        """
+        :param encoder: Encoder instance
+        :param estimator: Estimator instance
+        """
         self.encoder = encoder
         self.estimator = estimator
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, X, y):
+        """
+        Fit the wrapper model. First fits the encoder model, then transforms the data and fits the estimator model
+        :param X: predictor variable
+        :param y: dependent variable
+        :return: self
+        """
         self.encoder.fit(X, y)
         X_transformed = self.encoder.transform(X)
         y_transformed = self.encoder.expand_y(y)
         self.estimator.fit(X_transformed, y_transformed)
+        return self
 
     def predict_proba(self, X):
+        """
+        Predict probability when it is supported by the estimator.
+        This is expected for the binary classification models
+        :param X: predictor variables
+        :return: array of probabilities for the positive class only
+        """
         assert hasattr(self.estimator, 'predict_proba'), '''
             predict_proba() method is not available. You may be dealing with a Regression case 
         '''
@@ -350,9 +318,68 @@ class EncoderWrapper(BaseEstimator, ClassifierMixin, RegressorMixin):
         return self.encoder.average_y(preds)
 
     def predict(self, X):
+        """
+        Predicts the values. If the estimator supports predicting probabilities (binary classification) use that
+        :param X: the predictor variables
+        :return: the predictions.
+        """
         if hasattr(self.estimator, 'predict_proba'):
             return self.predict_proba(X).round()
         else:
             X_transformed = self.encoder.transform(X)
             preds = self.estimator.predict(X_transformed)
             return self.encoder.average_y(preds)
+
+
+class NormalGammaAccumulator(object):
+    """
+    Accumulator for Normal-Gamma distribution. Computes the parameters of the posterior distribution. Samples
+    from the distribution
+    """
+
+    def __init__(self, y, prior_samples_ratio: float):
+        """
+        :param y: The dependent variable
+        :param prior_samples_ratio: indicates the degree of influence of the prior distribution
+        """
+        self.y = y
+        self.prior = self._compute_posterior_parameters(y.mean(), y.var(), y.shape[0])
+        self.prior_samples_ratio = prior_samples_ratio
+
+    @staticmethod
+    def _compute_posterior_parameters(y_bar, y_var, n, mu_0=0, nu=0, alpha=0, beta=0) -> Tuple:
+        ss = y_var * (n - 1)
+        new_mu = (nu * mu_0 + n * y_bar) / (nu + n)
+        new_nu = nu + n
+        new_alpha = alpha + n / 2
+        new_beta = beta + 1 / 2 * ss + n * nu / (n + nu) * (y_bar - mu_0) ** 2 / 2
+        return new_mu, new_nu, new_alpha, new_beta
+
+    def get_posterior_parameters(self, X, col: str) -> Tuple:
+        """
+        Computes the parameters of the posterior distribution for a column
+        :param X: predictor variable
+        :param col: column name
+        :return: a tuple of the parameters of the posterior distribution
+        """
+        stats = self.y.groupby(X[col]).agg(['mean', 'count', 'var'])
+        return self._compute_posterior_parameters(stats['mean'], stats['var'], stats['count'],
+                                                  self.prior[0], self.prior[1] * self.prior_samples_ratio,
+                                                  self.prior[2] * self.prior_samples_ratio,
+                                                  self.prior[3] * self.prior_samples_ratio)
+
+    @staticmethod
+    def sample_single(mu, lambda_, alpha, beta) -> Tuple:
+        """
+        Generate a sample from the posterior distribution
+        :param mu: mu
+        :param lambda_: lambda
+        :param alpha: alpha
+        :param beta: beta
+        :return: a tuple that returns the mean and precision.
+        """
+        shape = alpha
+        scale = 1 / beta
+        tau = np.random.gamma(shape, scale)
+        x = np.random.normal(mu, 1 / np.sqrt(lambda_ * tau))
+        return x, tau
