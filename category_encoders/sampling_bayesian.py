@@ -227,12 +227,12 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         sample_function = np.vectorize(self.accumulator.sample_single)  # , signature='(a1),(a2),(a3),(a4)->(k)')
         for col in self.cols:
             sample_results = sample_function(*self.mapping[col])
-            columns = [f"{col}___{i}" for i in range(len(sample_results))]
+            columns = [f"{col}_encoded_{i}" for i in range(len(sample_results))]
             sample_results_df = pd.DataFrame(data=np.vstack(sample_results).T, columns=columns,
                                              index=self.mapping[col][0].index)
             for column in columns:
                 X[column] = X[col].map(sample_results_df[column])
-            X = X.drop(columns=[col]).rename(columns={columns[0]: col})
+            X = X.drop(columns=[col])
         return X
 
     def _score(self, X):

@@ -47,7 +47,7 @@ class TestSamplingBayesianEncoder(TestCase):
         enc.fit(X_le, y_le)
         X_new = enc.transform(X_le)
         self.assertEqual(len(X_le.columns) + len(enc.cols), len(X_new.columns))
-        df_diff = X_new.categorical - X_new.categorical___1
+        df_diff = X_new.categorical_encoded_0 - X_new.categorical_encoded_1
         self.assertTrue(df_diff.max() - df_diff.min() > 0, "Both encoded columns contain the same values")
 
 
