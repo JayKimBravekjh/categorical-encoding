@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Callable
 
 import numpy as np
 import pandas as pd
@@ -23,7 +23,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
     def __init__(self, verbose=0, cols=None, drop_invariant=False, return_df=True,
                  handle_unknown='value', handle_missing='value', random_state=None,
-                 prior_samples_ratio=1E-4, n_draws=10):
+                 prior_samples_ratio=1E-4, n_draws=10, mapper='identity'):
         """
         :param verbose: Level of verbosity. Default: 0
         :param cols: Categorical columns to be encoded
@@ -34,6 +34,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         :param random_state: Random state is used when taking samples
         :param prior_samples_ratio: Degree of the influence of the prior distribution
         :param n_draws: Number of draws (sample size)
+        :param mapper: Mapper to be used. Default: identity
         """
         self.verbose = verbose
         self.return_df = return_df
@@ -49,6 +50,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         self.prior_samples_ratio = prior_samples_ratio
         self.feature_names = None
         self.n_draws = n_draws
+        self.mapper = Mapping.create_mapper(mapper)
 
     def fit(self, X, y):
         """Fit encoder according to X and binary y.
@@ -227,8 +229,10 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         sample_function = np.vectorize(self.accumulator.sample_single)  # , signature='(a1),(a2),(a3),(a4)->(k)')
         for col in self.cols:
             sample_results = sample_function(*self.mapping[col])
-            columns = [f"{col}_encoded_{i}" for i in range(len(sample_results))]
-            sample_results_df = pd.DataFrame(data=np.vstack(sample_results).T, columns=columns,
+            impute = self.mapper(sample_results)
+            columns = [f"{col}_encoded_{i}" for i in range(len(impute))]
+            data = np.vstack(impute).T if len(columns) > 1 else impute[0]
+            sample_results_df = pd.DataFrame(data=data, columns=columns,
                                              index=self.mapping[col][0].index)
             for column in columns:
                 X[column] = X[col].map(sample_results_df[column])
@@ -330,6 +334,42 @@ class EncoderWrapper(BaseEstimator, ClassifierMixin, RegressorMixin):
             return self.encoder.average_y(preds)
 
 
+class Mapping(object):
+    """
+    Mapping functions
+    """
+
+    @staticmethod
+    def create_mapper(mapper) -> Callable:
+        """
+        If an argument is a function, returns it. Otherwise creates the function by name.
+        :param mapper: A Callable or a mapper name
+        :return: a Callable
+        """
+        if callable(mapper):
+            return mapper
+        elif mapper == 'mean':
+            return Mapping.mean
+        elif mapper == 'identity':
+            return Mapping.identity
+        else:
+            raise ValueError('Unknown mapper: ', mapper)
+
+    @staticmethod
+    def identity(sample_results: Tuple) -> Tuple:
+        """
+        Identity function
+        """
+        return sample_results
+
+    @staticmethod
+    def mean(sample_results: Tuple) -> Tuple:
+        """
+        Identity function
+        """
+        return sample_results[0],
+
+
 class NormalGammaAccumulator(object):
     """
     Accumulator for Normal-Gamma distribution. Computes the parameters of the posterior distribution. Samples
@@ -381,5 +421,5 @@ class NormalGammaAccumulator(object):
         scale = 1 / beta
         tau = np.random.gamma(shape, scale)
         x = np.random.normal(mu, 1 / np.sqrt(lambda_ * tau))
-        sigma_2 = 1/tau
+        sigma_2 = 1 / tau
         return x, sigma_2

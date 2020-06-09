@@ -50,6 +50,32 @@ class TestSamplingBayesianEncoder(TestCase):
         df_diff = X_new.categorical_encoded_0 - X_new.categorical_encoded_1
         self.assertTrue(df_diff.max() - df_diff.min() > 0, "Both encoded columns contain the same values")
 
+    def test_regression_mean(self):
+        enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
+                                               cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
+                                                          'categorical', 'na_categorical', 'categorical_int'],
+                                               mapper='mean')
+        X_le = OrdinalEncoder().fit_transform(X).fillna(0)
+        inf_values = np.isinf(X_le).sum(axis=1) == 0
+        X_le = X_le[inf_values]
+        y_le = y[inf_values]
+        enc.fit(X_le, y_le)
+        X_new = enc.transform(X_le)
+        self.assertEqual(len(X_le.columns), len(X_new.columns))
+
+    def test_regression_custom_mapper(self):
+        enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
+                                               cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
+                                                          'categorical', 'na_categorical', 'categorical_int'],
+                                               mapper=lambda x:  (x[1],))
+        X_le = OrdinalEncoder().fit_transform(X).fillna(0)
+        inf_values = np.isinf(X_le).sum(axis=1) == 0
+        X_le = X_le[inf_values]
+        y_le = y[inf_values]
+        enc.fit(X_le, y_le)
+        X_new = enc.transform(X_le)
+        self.assertEqual(len(X_le.columns), len(X_new.columns))
+
 
     def test_wrapper_classification(self):
         enc = encoders.PosteriorImputationEncoderBC(verbose=1, n_draws=2,
