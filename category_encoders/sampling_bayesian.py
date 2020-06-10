@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Tuple, Callable
 
 import numpy as np
@@ -7,6 +8,19 @@ from category_encoders.ordinal import OrdinalEncoder
 import category_encoders.utils as util
 
 __author__ = 'Michael Larionov'
+
+
+class TaskType(Enum):
+    REGRESSION = 1
+    BINARY_CLASSIFICATION = 2
+    MULTICLASS_CLASSIFICATION = 3
+
+    @staticmethod
+    def create_accumulator(task):
+        if task == TaskType.REGRESSION:
+            return NormalGammaAccumulator
+        elif task == TaskType.BINARY_CLASSIFICATION:
+            return BetaAccumulator
 
 
 class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
@@ -23,7 +37,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
     def __init__(self, verbose=0, cols=None, drop_invariant=False, return_df=True,
                  handle_unknown='value', handle_missing='value', random_state=None,
-                 prior_samples_ratio=1E-4, n_draws=10, mapper='identity'):
+                 prior_samples_ratio=1E-4, n_draws=10, mapper='identity', task=TaskType.BINARY_CLASSIFICATION):
         """
         :param verbose: Level of verbosity. Default: 0
         :param cols: Categorical columns to be encoded
@@ -34,7 +48,8 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         :param random_state: Random state is used when taking samples
         :param prior_samples_ratio: Degree of the influence of the prior distribution
         :param n_draws: Number of draws (sample size)
-        :param mapper: Mapper to be used. Default: identity
+        :param mapper: string or callable: Mapper to be used. Default: identity
+        :param task: TaskType.
         """
         self.verbose = verbose
         self.return_df = return_df
@@ -51,6 +66,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         self.feature_names = None
         self.n_draws = n_draws
         self.mapper = Mapping.create_mapper(mapper)
+        self.task = task
 
     def fit(self, X, y):
         """Fit encoder according to X and binary y.
@@ -194,7 +210,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         mapping = {}
 
         # Calculate global statistics
-        self.accumulator = NormalGammaAccumulator(y, self.prior_samples_ratio)
+        self.accumulator = TaskType.create_accumulator(self.task)(y, self.prior_samples_ratio)
         prior = self.accumulator.prior
 
         for switch in self.ordinal_encoder.category_mapping:
@@ -230,6 +246,8 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         for col in self.cols:
             sample_results = sample_function(*self.mapping[col])
             impute = self.mapper(sample_results)
+            if type(impute) is not tuple:
+                impute = (impute,)
             columns = [f"{col}_encoded_{i}" for i in range(len(impute))]
             data = np.vstack(impute).T if len(columns) > 1 else impute[0]
             sample_results_df = pd.DataFrame(data=data, columns=columns,
@@ -423,3 +441,46 @@ class NormalGammaAccumulator(object):
         x = np.random.normal(mu, 1 / np.sqrt(lambda_ * tau))
         sigma_2 = 1 / tau
         return x, sigma_2
+
+
+class BetaAccumulator(object):
+    """
+    Accumulator for Normal-Gamma distribution. Computes the parameters of the posterior distribution. Samples
+    from the distribution
+    """
+
+    def __init__(self, y, prior_samples_ratio: float):
+        """
+        :param y: The dependent variable
+        :param prior_samples_ratio: indicates the degree of influence of the prior distribution
+        """
+        self.y = y
+        self.prior = self._compute_posterior_parameters(y.sum(), y.count() - y.sum())
+        self.prior_samples_ratio = prior_samples_ratio
+
+    @staticmethod
+    def _compute_posterior_parameters(successes, failures, prior_successes=0, prior_failures=0):
+        return prior_successes + successes, prior_failures + failures
+
+    def get_posterior_parameters(self, X, col: str) -> Tuple:
+        """
+        Computes the parameters of the posterior distribution for a column
+        :param X: predictor variable
+        :param col: column name
+        :return: a tuple of the parameters of the posterior distribution
+        """
+        stats = self.y.groupby(X[col]).agg(['sum', 'count'])
+        prior_successes, prior_failures = self.prior
+        return self._compute_posterior_parameters(stats['sum'], stats['count'] - stats['sum'],
+                                                  prior_successes * self.prior_samples_ratio,
+                                                  prior_failures * self.prior_samples_ratio)
+
+    @staticmethod
+    def sample_single(successes, failures) -> float:
+        """
+        Generate a sample from the posterior distribution
+        :param failures:
+        :param successes:
+        :return: a tuple with one element, which is a sample from beta distribution
+        """
+        return np.random.beta(successes+1, failures+1)

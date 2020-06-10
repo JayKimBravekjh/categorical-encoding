@@ -6,7 +6,7 @@ import numpy as np
 from category_encoders.ordinal import OrdinalEncoder
 
 import category_encoders as encoders
-from category_encoders.sampling_bayesian import EncoderWrapper
+from category_encoders.sampling_bayesian import EncoderWrapper, TaskType
 
 np_X = th.create_array(n_rows=100)
 np_X_t = th.create_array(n_rows=50, extras=True)
@@ -25,13 +25,13 @@ y_t = pd.DataFrame(np_y_t)
 class TestSamplingBayesianEncoder(TestCase):
 
     def test_classification(self):
-        enc = encoders.PosteriorImputationEncoderBC(verbose=1, )
+        enc = encoders.SamplingBayesianEncoder(verbose=1, task=TaskType.BINARY_CLASSIFICATION)
         enc.fit(X, y)
         th.verify_numeric(enc.transform(X_t))
         th.verify_numeric(enc.transform(X_t, y_t))
 
     def test_regression_numeric(self):
-        enc = encoders.SamplingBayesianEncoder(verbose=1, )
+        enc = encoders.SamplingBayesianEncoder(verbose=1, task=TaskType.REGRESSION )
         enc.fit(X, y_reg)
         th.verify_numeric(enc.transform(X_t))
         th.verify_numeric(enc.transform(X_t, y_t_reg))
@@ -39,7 +39,8 @@ class TestSamplingBayesianEncoder(TestCase):
     def test_regression(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
-                                                          'categorical', 'na_categorical', 'categorical_int'])
+                                                     'categorical', 'na_categorical', 'categorical_int'],
+                                               task=TaskType.REGRESSION)
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]
@@ -53,8 +54,8 @@ class TestSamplingBayesianEncoder(TestCase):
     def test_regression_mean(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
-                                                          'categorical', 'na_categorical', 'categorical_int'],
-                                               mapper='mean')
+                                                     'categorical', 'na_categorical', 'categorical_int'],
+                                               mapper='mean', task=TaskType.REGRESSION)
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]
@@ -66,8 +67,8 @@ class TestSamplingBayesianEncoder(TestCase):
     def test_regression_custom_mapper(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
-                                                          'categorical', 'na_categorical', 'categorical_int'],
-                                               mapper=lambda x:  (x[1],))
+                                                     'categorical', 'na_categorical', 'categorical_int'],
+                                               mapper=lambda x: (x[1],), task=TaskType.REGRESSION)
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]
@@ -75,7 +76,6 @@ class TestSamplingBayesianEncoder(TestCase):
         enc.fit(X_le, y_le)
         X_new = enc.transform(X_le)
         self.assertEqual(len(X_le.columns), len(X_new.columns))
-
 
     def test_wrapper_classification(self):
         enc = encoders.PosteriorImputationEncoderBC(verbose=1, n_draws=2,
@@ -96,7 +96,8 @@ class TestSamplingBayesianEncoder(TestCase):
     def test_wrapper_regression(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
-                                                          'categorical', 'na_categorical', 'categorical_int'])
+                                                     'categorical', 'na_categorical', 'categorical_int'],
+                                               task=TaskType.REGRESSION)
         classifier = RandomForestRegressor(n_estimators=10)
         wrapper_model = EncoderWrapper(enc, classifier)
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
@@ -108,4 +109,3 @@ class TestSamplingBayesianEncoder(TestCase):
         wrapper_model.fit(X_le, y_le)
         preds = wrapper_model.predict(X_le)
         self.assertEqual(y_le.shape[0], preds.shape[0])
-
