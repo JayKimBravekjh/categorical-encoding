@@ -370,6 +370,8 @@ class Mapping(object):
             return Mapping.mean
         elif mapper == 'identity':
             return Mapping.identity
+        elif mapper == 'weight_of_evidence':
+            return Mapping.weight_of_evidence
         else:
             raise ValueError('Unknown mapper: ', mapper)
 
@@ -386,6 +388,16 @@ class Mapping(object):
         Identity function
         """
         return sample_results[0],
+
+    @staticmethod
+    def weight_of_evidence(sample_results: Tuple) -> Tuple:
+        """
+        Weight of evidence
+        :param sample_results:
+        :return:
+        """
+        p = sample_results[0]
+        return np.log(p/(1-p))
 
 
 class NormalGammaAccumulator(object):

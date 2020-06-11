@@ -14,7 +14,6 @@ from category_encoders.helmert import HelmertEncoder
 from category_encoders.one_hot import OneHotEncoder
 from category_encoders.ordinal import OrdinalEncoder
 from category_encoders.sampling_bayesian import SamplingBayesianEncoder
-from category_encoders.posterior_imputation_bc import PosteriorImputationEncoderBC
 from category_encoders.sum_coding import SumEncoder
 from category_encoders.polynomial import PolynomialEncoder
 from category_encoders.basen import BaseNEncoder
@@ -45,6 +44,5 @@ __all__ = [
     'MEstimateEncoder',
     'JamesSteinEncoder',
     'CatBoostEncoder',
-    'PosteriorImputationEncoderBC',
     'SamplingBayesianEncoder'
 ]
