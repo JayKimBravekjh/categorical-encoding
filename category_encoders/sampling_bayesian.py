@@ -65,7 +65,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         self.prior_samples_ratio = prior_samples_ratio
         self.feature_names = None
         self.n_draws = n_draws
-        self.mapper = Mapping.create_mapper(mapper)
+        self.mapper = mapper
         self.task = task
 
     def fit(self, X, y):
@@ -245,7 +245,8 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         sample_function = np.vectorize(self.accumulator.sample_single)  # , signature='(a1),(a2),(a3),(a4)->(k)')
         for col in self.cols:
             sample_results = sample_function(*self.mapping[col])
-            impute = self.mapper(sample_results)
+            mapper = Mapping.create_mapper(self.mapper)
+            impute = mapper(sample_results)
             if type(impute) is not tuple:
                 impute = (impute,)
             columns = [f"{col}_encoded_{i}" for i in range(len(impute))]
