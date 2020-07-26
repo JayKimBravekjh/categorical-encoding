@@ -103,6 +103,29 @@ class TestSamplingBayesianEncoder(TestCase):
         X_new = enc.transform(X_le)
         self.assertEqual(len(X_le.columns), len(X_new.columns))
 
+    def test_binary_classification_mean_identity_same(self):
+        enc_mean = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2, random_state=578,
+                                               cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
+                                                     'categorical', 'na_categorical', 'categorical_int'],
+                                               task=TaskType.BINARY_CLASSIFICATION, mapper='mean')
+        enc_identity = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2, random_state=578,
+                                               cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
+                                                     'categorical', 'na_categorical', 'categorical_int'],
+                                               task=TaskType.BINARY_CLASSIFICATION, mapper='identity')
+
+        X_le = OrdinalEncoder().fit_transform(X).fillna(0)
+        inf_values = np.isinf(X_le).sum(axis=1) == 0
+        X_le = X_le[inf_values]
+        y_le = y[inf_values]
+        enc_mean.fit(X_le, y_le)
+        X_mean = enc_mean.transform(X_le)
+        enc_identity.fit(X_le, y_le)
+        X_identity = enc_identity.transform(X_le)
+        print(X_mean)
+        print(X_identity)
+        self.assertTrue(X_mean.equals(X_identity))
+
+
     def test_binary_classification_woe(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
@@ -120,7 +143,7 @@ class TestSamplingBayesianEncoder(TestCase):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
                                                      'categorical', 'na_categorical', 'categorical_int'],
-                                               task=TaskType.BINARY_CLASSIFICATION, mapper=lambda x: (x, x ** 2))
+                                               task=TaskType.BINARY_CLASSIFICATION, mapper=lambda x: (x[0], x[0] ** 2))
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]

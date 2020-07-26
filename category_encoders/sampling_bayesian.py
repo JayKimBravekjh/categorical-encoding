@@ -242,9 +242,8 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
     def _score_one_draw(self, X_in: pd.DataFrame):
         X = X_in.copy(deep=True)
-        sample_function = np.vectorize(self.accumulator.sample_single)  # , signature='(a1),(a2),(a3),(a4)->(k)')
         for col in self.cols:
-            sample_results = sample_function(*self.mapping[col])
+            sample_results = self.accumulator.sample_vector(self.mapping[col])
             mapper = Mapping.create_mapper(self.mapper)
             impute = mapper(sample_results)
             if type(impute) is not tuple:
@@ -259,6 +258,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         return X
 
     def _score(self, X):
+        np.random.seed(self.random_state)
         return pd.concat([self._score_one_draw(X) for _ in range(self.n_draws)])
 
     def get_feature_names(self):
@@ -384,14 +384,14 @@ class Mapping(object):
         return sample_results
 
     @staticmethod
-    def mean(sample_results: Tuple) -> Tuple:
+    def mean(sample_results: Tuple) -> float:
         """
-        Identity function
+        Mean assumed to be the first element
         """
-        return sample_results[0],
+        return sample_results[0]
 
     @staticmethod
-    def weight_of_evidence(sample_results: Tuple) -> Tuple:
+    def weight_of_evidence(sample_results: Tuple) -> float:
         """
         Weight of evidence
         :param sample_results:
@@ -455,6 +455,9 @@ class NormalGammaAccumulator(object):
         sigma_2 = 1 / tau
         return x, sigma_2
 
+    def sample_vector(self, mapping) -> Tuple:
+        sample_function = np.vectorize(self.sample_single)
+        return sample_function(*mapping)
 
 class BetaAccumulator(object):
     """
@@ -497,3 +500,8 @@ class BetaAccumulator(object):
         :return: a tuple with one element, which is a sample from beta distribution
         """
         return np.random.beta(successes+1, failures+1)
+
+    def sample_vector(self, mapping) -> Tuple:
+        sample_function = np.vectorize(self.sample_single)
+        return (sample_function(*mapping),)
+
