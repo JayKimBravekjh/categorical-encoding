@@ -102,6 +102,9 @@ class TestSamplingBayesianEncoder(TestCase):
         enc.fit(X_le, y_le)
         X_new = enc.transform(X_le)
         self.assertEqual(len(X_le.columns), len(X_new.columns))
+        #Now we need to make sure that there are no identical values.
+        self.check_contains_no_equal(X_new.categorical_encoded_0)
+
 
     def test_binary_classification_mean_identity_same(self):
         enc_mean = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2, random_state=578,
@@ -121,8 +124,6 @@ class TestSamplingBayesianEncoder(TestCase):
         X_mean = enc_mean.transform(X_le)
         enc_identity.fit(X_le, y_le)
         X_identity = enc_identity.transform(X_le)
-        print(X_mean)
-        print(X_identity)
         self.assertTrue(X_mean.equals(X_identity))
 
 
@@ -185,3 +186,8 @@ class TestSamplingBayesianEncoder(TestCase):
         wrapper_model.fit(X_le, y_le)
         preds = wrapper_model.predict(X_le)
         self.assertEqual(y_le.shape[0], preds.shape[0])
+
+    def check_contains_no_equal(self, column: pd.Series):
+        for i in range(len(column)-1):
+            for j in range(i+1, len(column)):
+                self.assertNotAlmostEqual(column.iloc[i], column.iloc[j])

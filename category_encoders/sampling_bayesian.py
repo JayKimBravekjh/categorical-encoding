@@ -231,7 +231,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
                     estimate[param_index].loc[-1] = prior[param_index]
 
                 if self.handle_missing == 'return_nan':
-                    estimate[param_index].loc[values.loc[np.nan]] = np.nan
+                    estimate[param_index].loc[-2] = np.nan
                 elif self.handle_missing == 'value':
                     estimate[param_index].loc[-2] = prior[param_index]
 
@@ -243,17 +243,28 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
     def _score_one_draw(self, X_in: pd.DataFrame):
         X = X_in.copy(deep=True)
         for col in self.cols:
-            sample_results = self.accumulator.sample_vector(self.mapping[col])
+
             mapper = Mapping.create_mapper(self.mapper)
-            impute = mapper(sample_results)
-            if type(impute) is not tuple:
-                impute = (impute,)
-            columns = [f"{col}_encoded_{i}" for i in range(len(impute))]
-            data = np.vstack(impute).T if len(columns) > 1 else impute[0]
-            sample_results_df = pd.DataFrame(data=data, columns=columns,
-                                             index=self.mapping[col][0].index)
-            for column in columns:
-                X[column] = X[col].map(sample_results_df[column])
+
+            def map_single_row(val):
+                mapping = self.mapping[col]
+                if np.isnan(val):
+                    posterior_params = (map_instance.loc[-2] for map_instance in mapping)
+                elif val not in mapping[0].index:
+                    posterior_params = (map_instance.loc[-1] for map_instance in mapping)
+                else:
+                    posterior_params = (map_instance.loc[val] for map_instance in mapping)
+                sample_result = self.accumulator.sample_single(*posterior_params)
+                if type(sample_result) is not tuple:
+                    sample_result = (sample_result,)
+                impute = mapper(sample_result)
+                if type(impute) is not tuple:
+                    impute = (impute,)
+                columns = [f"{col}_encoded_{i}" for i in range(len(impute))]
+                return pd.Series({columns[i]: impute[i] for i in range(len(columns))})
+
+            data = X[col].apply(map_single_row)
+            X = X.join(data)
             X = X.drop(columns=[col])
         return X
 
@@ -455,9 +466,6 @@ class NormalGammaAccumulator(object):
         sigma_2 = 1 / tau
         return x, sigma_2
 
-    def sample_vector(self, mapping) -> Tuple:
-        sample_function = np.vectorize(self.sample_single)
-        return sample_function(*mapping)
 
 class BetaAccumulator(object):
     """
@@ -500,8 +508,4 @@ class BetaAccumulator(object):
         :return: a tuple with one element, which is a sample from beta distribution
         """
         return np.random.beta(successes+1, failures+1)
-
-    def sample_vector(self, mapping) -> Tuple:
-        sample_function = np.vectorize(self.sample_single)
-        return (sample_function(*mapping),)
 
