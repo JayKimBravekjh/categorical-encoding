@@ -242,12 +242,13 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
     def _score_one_draw(self, X_in: pd.DataFrame):
         X = X_in.copy(deep=True)
+        mapper = Mapping.create_mapper(self.mapper)
         for col in self.cols:
 
-            mapper = Mapping.create_mapper(self.mapper)
+            mapping = self.mapping[col]
 
             def map_single_row(val):
-                mapping = self.mapping[col]
+
                 if np.isnan(val):
                     posterior_params = (map_instance.loc[-2] for map_instance in mapping)
                 elif val not in mapping[0].index:
@@ -260,10 +261,11 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
                 impute = mapper(sample_result)
                 if type(impute) is not tuple:
                     impute = (impute,)
-                columns = [f"{col}_encoded_{i}" for i in range(len(impute))]
-                return pd.Series({columns[i]: impute[i] for i in range(len(columns))})
+                return impute
 
-            data = X[col].apply(map_single_row)
+            data = X[col].apply(map_single_row).to_list()
+            columns = [f"{col}_encoded_{i}" for i in range(len(data[0]))]
+            data = pd.DataFrame(data, columns=columns, index=X.index)
             X = X.join(data)
             X = X.drop(columns=[col])
         return X
