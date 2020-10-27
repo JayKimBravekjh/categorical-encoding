@@ -37,8 +37,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
     def __init__(self, verbose=0, cols=None, drop_invariant=False, return_df=True,
                  handle_unknown='value', handle_missing='value', random_state=None,
-                 prior_samples_ratio=1E-4, n_draws=10, mapper='identity', task=TaskType.BINARY_CLASSIFICATION,
-                 sampling_array_size=997):
+                 prior_samples_ratio=1E-4, n_draws=10, mapper='identity', task=TaskType.BINARY_CLASSIFICATION):
         """
         :param verbose: Level of verbosity. Default: 0
         :param cols: Categorical columns to be encoded
@@ -68,7 +67,6 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         self.n_draws = n_draws
         self.mapper = mapper
         self.task = task
-        self.sampling_array_size = sampling_array_size
 
     def fit(self, X, y):
         """Fit encoder according to X and binary y.
@@ -212,7 +210,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         mapping = {}
 
         # Calculate global statistics
-        self.accumulator = TaskType.create_accumulator(self.task)(y, self.prior_samples_ratio, self.sampling_array_size)
+        self.accumulator = TaskType.create_accumulator(self.task)(y, self.prior_samples_ratio)
         prior = self.accumulator.prior
 
         for switch in self.ordinal_encoder.category_mapping:
@@ -416,70 +414,20 @@ class Mapping(object):
         return np.log(p/(1-p))
 
 
-class GammaSampler(object):
-    """
-    This class is designed to overcome performance of the numpy/scipy gamma sampler.
-    Rather than making single samples, this class samples an array and
-    for the repeating calls with the same parameters it iterates through this array.
-    So we have CPU-memory tradeoff. If the arrays are too short, we will get many repeated values,
-    and the risk is that the model learns this cycling pattern
-    """
-
-    # The key for is (shape, scale)
-    # The value is [data array, current position]
-    _sample_cache = {}
-
-    def __init__(self, array_size):
-        '''
-        Create an object
-        :param array_size: the size of the sample array
-        '''
-        self.array_size = array_size
-
-    def sample(self, shape, scale):
-        """
-        Samples from Gamma distribution. Uses a cached array to avoid performance issues
-        :param shape: shape
-        :param scale: scale
-        :return: a single sample from the Gamma distribution
-        """
-        key = (shape, scale)
-        if key not in self._sample_cache:
-            self._sample_cache[key] = self._generate_sample(shape, scale)
-        cached_result = self._sample_cache[key]
-        cached_array = cached_result[0]
-        position = cached_result[1]
-        result = cached_array[position % self.array_size]
-        self._sample_cache[key][1] = position + 1
-        return result
-
-    def _generate_sample(self, shape, scale):
-        """
-        Generate a sample from Gamma distribution of the size array_size
-        :param shape: shape
-        :param scale: scale
-        :return: list, the first element of which is the data, the second - the initial position 0
-        """
-        data = np.random.gamma(shape, scale, size=self.array_size)
-        return [data, 0]
-
-
 class NormalGammaAccumulator(object):
     """
     Accumulator for Normal-Gamma distribution. Computes the parameters of the posterior distribution. Samples
     from the distribution
     """
 
-    def __init__(self, y, prior_samples_ratio: float, cache_array_size: int):
+    def __init__(self, y, prior_samples_ratio: float):
         """
         :param y: The dependent variable
         :param prior_samples_ratio: indicates the degree of influence of the prior distribution
-        :param cache_array_size: the size of the cache array, that will have
         """
         self.y = y
         self.prior = self._compute_posterior_parameters(y.mean(), y.var(), y.shape[0])
         self.prior_samples_ratio = prior_samples_ratio
-        self.gamma_sampler = GammaSampler(cache_array_size)
 
     @staticmethod
     def _compute_posterior_parameters(y_bar, y_var, n, mu_0=0, nu=0, alpha=0, beta=0) -> Tuple:
@@ -503,7 +451,8 @@ class NormalGammaAccumulator(object):
                                                   self.prior[2] * self.prior_samples_ratio,
                                                   self.prior[3] * self.prior_samples_ratio)
 
-    def sample_single(self, mu, lambda_, alpha, beta) -> Tuple:
+    @staticmethod
+    def sample_single(mu, lambda_, alpha, beta) -> Tuple:
         """
         Generate a sample from the posterior distribution
         :param mu: mu
@@ -514,8 +463,7 @@ class NormalGammaAccumulator(object):
         """
         shape = alpha
         scale = 1 / beta
-        #tau = np.random.gamma(shape, scale)
-        tau = self.gamma_sampler.sample(shape, scale)
+        tau = np.random.gamma(shape, scale)
         x = np.random.normal(mu, 1 / np.sqrt(lambda_ * tau))
         sigma_2 = 1 / tau
         return x, sigma_2
@@ -527,7 +475,7 @@ class BetaAccumulator(object):
     from the distribution
     """
 
-    def __init__(self, y, prior_samples_ratio: float, *args):
+    def __init__(self, y, prior_samples_ratio: float):
         """
         :param y: The dependent variable
         :param prior_samples_ratio: indicates the degree of influence of the prior distribution
