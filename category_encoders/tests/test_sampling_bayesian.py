@@ -64,11 +64,15 @@ class TestSamplingBayesianEncoder(TestCase):
         X_new = enc.transform(X_le)
         self.assertEqual(len(X_le.columns), len(X_new.columns))
 
+    @staticmethod
+    def first_element(x):
+        return (x[1],)
+
     def test_regression_custom_mapper(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
                                                      'categorical', 'na_categorical', 'categorical_int'],
-                                               mapper=lambda x: (x[1],), task=TaskType.REGRESSION)
+                                               mapper=self.first_element, task=TaskType.REGRESSION)
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]
@@ -140,11 +144,15 @@ class TestSamplingBayesianEncoder(TestCase):
         X_new = enc.transform(X_le)
         self.assertEqual(len(X_le.columns), len(X_new.columns))
 
+    @staticmethod
+    def square(x):
+        return (x[0], x[0] ** 2)
+
     def test_binary_classification_custom(self):
         enc = encoders.SamplingBayesianEncoder(verbose=1, n_draws=2,
                                                cols=['unique_str', 'invariant', 'underscore', 'none', 'extra', 321,
                                                      'categorical', 'na_categorical', 'categorical_int'],
-                                               task=TaskType.BINARY_CLASSIFICATION, mapper=lambda x: (x[0], x[0] ** 2))
+                                               task=TaskType.BINARY_CLASSIFICATION, mapper=self.square)
         X_le = OrdinalEncoder().fit_transform(X).fillna(0)
         inf_values = np.isinf(X_le).sum(axis=1) == 0
         X_le = X_le[inf_values]

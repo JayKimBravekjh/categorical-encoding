@@ -6,6 +6,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin, ClassifierMixin, RegressorMixin
 from category_encoders.ordinal import OrdinalEncoder
 import category_encoders.utils as util
+import multiprocessing as mp
 
 __author__ = 'Michael Larionov'
 
@@ -61,7 +62,7 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         self.mapping = None
         self.handle_unknown = handle_unknown
         self.handle_missing = handle_missing
-        self.random_state = random_state
+        self.random_state = 2128506 if random_state is None else random_state
         self.prior_samples_ratio = prior_samples_ratio
         self.feature_names = None
         self.n_draws = n_draws
@@ -240,7 +241,8 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
 
         return mapping
 
-    def _score_one_draw(self, X_in: pd.DataFrame):
+    def _score_one_draw(self, X_in: pd.DataFrame, random_seed):
+        np.random.seed(random_seed)
         X = X_in.copy(deep=True)
         mapper = Mapping.create_mapper(self.mapper)
         for col in self.cols:
@@ -271,8 +273,13 @@ class SamplingBayesianEncoder(BaseEstimator, TransformerMixin):
         return X
 
     def _score(self, X):
-        np.random.seed(self.random_state)
-        return pd.concat([self._score_one_draw(X) for _ in range(self.n_draws)])
+        if self.n_draws == 1:
+            return self._score_one_draw(X, self.random_state)
+        else:
+            pool = mp.Pool()
+            pool_args = [(X, seed + self.random_state) for seed in range(self.n_draws)]
+            results = pool.starmap(self._score_one_draw, pool_args)
+            return pd.concat(results)
 
     def get_feature_names(self):
         """
